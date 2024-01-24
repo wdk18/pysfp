@@ -1,5 +1,3 @@
-from email.policy import default
-from xml.dom.minidom import parse
 import xml.dom.minidom
 
 import sys
