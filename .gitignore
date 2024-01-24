@@ -1,2 +1,5 @@
-venv
-.idea/dictionaries
+.venv
+.vscode
+*.spec
+build
+dist
