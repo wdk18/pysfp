@@ -1,5 +1,5 @@
+#导入必要的模块
 import xml.dom.minidom
-
 import sys
 import os
 import hashlib
@@ -9,7 +9,7 @@ import intelhex
 import chardet
 from optparse import OptionParser
 
-
+#获取启动地址
 def find_start_address(__prj_path):
     __xml_dom = xml.dom.minidom.parse(str(__prj_path))
     __collection = __xml_dom.documentElement
@@ -18,13 +18,13 @@ def find_start_address(__prj_path):
         "StartAddress")[0].childNodes[0].data, 16)
     return __start_address
 
-
+#获取文件编码
 def get_encoding(_file):
     with open(_file, 'rb') as _f:
         tmp = chardet.detect(_f.read(1000))
         return tmp["encoding"]
 
-
+#解析配置文件
 def parse_config(_config_file):
     # 自动获取文件编码
     __config_f = open(_config_file, 'r', encoding=get_encoding(_config_file))
@@ -63,7 +63,7 @@ def parse_config(_config_file):
 
     return [__prj_tag, __ver, __flash_base, __firm_off]
 
-
+#查找项目文件
 def find_prj_file():
     _files = os.listdir('.')
     for _f in _files:
@@ -72,7 +72,17 @@ def find_prj_file():
 
     return None
 
+# 解析 revision.h 文件
+def parse_revision_file(_revision_file):
+    with open(_revision_file, 'r', encoding=get_encoding(_revision_file)) as _f:
+        content = _f.read()
+        _list = re.findall(r'#define GIT_REVISION\s*\"(.+?)\"', content)
+        if len(_list) == 0:
+            return None
+        else:
+            return _list[0]
 
+#主程序
 #  Start here
 parser = OptionParser()
 parser.add_option("-k", "--kernel-dir",
@@ -91,6 +101,10 @@ parser.add_option("-c", "--configure-file",
                   dest="configure_file", default='boot_config.h',
                   action="store", type="string",
                   help="Configure file name (default=\'boot_config.h\')")
+parser.add_option("-r", "--revision-file",
+                  dest="revision_file", default='revision.h',
+                  action="store", type="string",
+                  help="Revision file name (default=\'revision.h\')")
 parser.add_option("-o", "--output",
                   dest="output", default='Output',
                   action="store", type="string",
@@ -119,6 +133,17 @@ if start_address != (flash_base + kernel_offset):
     print('[ERROR] 内核启动地址错误!请检查工程设置!')
     sys.exit(2)
 
+# 解析 revision.h 文件
+revision_path = os.path.join(kernel_path, options.revision_file)
+if not os.path.exists(kernel_path + '/' + options.revision_file):
+    print('Revision 文件' + revision_path + '不存在')
+    sys.exit(1)
+git_revision = parse_revision_file(revision_path)
+if git_revision is None:
+    print('Revision 文件' + revision_path + '解析失败')
+    sys.exit(1)
+
+#获取内核和Bootloader的二进制文件路径
 kernel_bin_path = kernel_path + '/Output/kernel.bin'
 boot_bin_path = boot_path + '/Output/boot.bin'
 output_dir = options.output.rstrip('\\').rstrip('/')
@@ -131,6 +156,7 @@ print("BASE =       " + hex(flash_base))
 print("START_ADDR = " + hex(start_address))
 print("OFFSET =     " + hex(kernel_offset))
 
+#检查文件存在性
 if not os.path.exists(kernel_bin_path):
     print('[ERROR] 内核Bin文件不存在!')
     sys.exit(3)
@@ -175,7 +201,8 @@ fw_file.write(bytes(time.strftime("%Y-%m-%d %H:%M:%S",
               time.localtime(kernel_mtime)), encoding='utf-8'))
 fw_file.write(bytes(5))
 fw_file.write(int(kernel_size).to_bytes(4, 'little'))
-fw_file.write(int(kernel_md5[0:32], 16).to_bytes(16, 'big'))
+fw_file.write(int(kernel_md5[0:16], 16).to_bytes(8, 'big'))
+fw_file.write(git_revision[:8].encode('utf-8'))  # 写入8个字节的 GIT_REVISION
 fw_file.write(bytes(2))
 fw_file.write(kernel)
 fw_file.close()
@@ -197,6 +224,7 @@ print("ver:     " + config[1])
 print("time:    " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(kernel_mtime)))
 print("size:    " + str(kernel_size) + 'bytes')
 print("MD5:     <" + kernel_md5[0:32] + '>')
+print("revision_path: " + git_revision[:8])
 print("--------------------------------------------")
 print("Firmware Pack Complete!")
 sys.exit(0)
