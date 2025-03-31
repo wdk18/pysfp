@@ -137,11 +137,13 @@ if start_address != (flash_base + kernel_offset):
 revision_path = os.path.join(kernel_path, options.revision_file)
 if not os.path.exists(kernel_path + '/' + options.revision_file):
     print('Revision 文件' + revision_path + '不存在')
-    sys.exit(1)
+   git_revision = "Unknown"
+
 git_revision = parse_revision_file(revision_path)
 if git_revision is None:
     print('Revision 文件' + revision_path + '解析失败')
-    sys.exit(1)
+    git_revision = "Unknown"
+
 
 #获取内核和Bootloader的二进制文件路径
 kernel_bin_path = kernel_path + '/Output/kernel.bin'
