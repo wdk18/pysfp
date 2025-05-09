@@ -6,8 +6,9 @@
 
   - intelhex
   - chardet
+  - gitpython
 
-## 生成方法
+## 生成单可执行文件方法
 
   1. 使用 `pip` 安装 `pyinstaller` 包
   2. 在目录下调用如下命令

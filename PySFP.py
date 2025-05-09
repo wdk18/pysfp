@@ -1,15 +1,50 @@
-#导入必要的模块
-import xml.dom.minidom
-import sys
-import os
+# 导入必要的模块
 import hashlib
+import os
 import re
+import sys
 import time
-import intelhex
-import chardet
+import xml.dom.minidom
+from ctypes import *
 from optparse import OptionParser
 
-#获取启动地址
+import chardet
+import git
+import intelhex
+
+
+# struct firmware_header
+# {
+#    char pack_tool[4];
+#    char compress_type;
+#    char encrypt_type;
+#    char reserve1[4];
+#    char proj_tag[32];
+#    char version[8];
+#    char create_time[24];
+#    unsigned int size;
+#    char md5[8];
+#    char git_revision[8];
+#    char reserve2[2];
+# };
+class FirmwareHeader(Structure):
+    _pack_ = 1
+    _fields_ = [
+        ('pack_tool', 4 * c_char),
+        ('compress_type', c_ubyte),
+        ('encrypt_type', c_ubyte),
+        ('reserve1', 4 * c_char),
+        ('proj_tag', 32 * c_char),
+        ('version', 8 * c_char),
+        ('create_time', 24 * c_char),
+        ('size', c_uint32),
+        ('md5', 8 * c_char),
+        ('git_revision', 8 * c_char),
+        ('reserve2', 2 * c_char),
+    ]
+
+
+# 获取启动地址
 def find_start_address(__prj_path):
     __xml_dom = xml.dom.minidom.parse(str(__prj_path))
     __collection = __xml_dom.documentElement
@@ -18,13 +53,15 @@ def find_start_address(__prj_path):
         "StartAddress")[0].childNodes[0].data, 16)
     return __start_address
 
-#获取文件编码
+
+# 获取文件编码
 def get_encoding(_file):
     with open(_file, 'rb') as _f:
         tmp = chardet.detect(_f.read(1000))
         return tmp["encoding"]
 
-#解析配置文件
+
+# 解析配置文件
 def parse_config(_config_file):
     # 自动获取文件编码
     __config_f = open(_config_file, 'r', encoding=get_encoding(_config_file))
@@ -63,7 +100,8 @@ def parse_config(_config_file):
 
     return [__prj_tag, __ver, __flash_base, __firm_off]
 
-#查找项目文件
+
+# 查找项目文件
 def find_prj_file():
     _files = os.listdir('.')
     for _f in _files:
@@ -72,17 +110,31 @@ def find_prj_file():
 
     return None
 
-# 解析 revision.h 文件
-def parse_revision_file(_revision_file):
-    with open(_revision_file, 'r', encoding=get_encoding(_revision_file)) as _f:
-        content = _f.read()
-        _list = re.findall(r'#define GIT_REVISION\s*\"(.+?)\"', content)
-        if len(_list) == 0:
-            return None
-        else:
-            return _list[0]
 
-#主程序
+def string_to_bytearray(_str: str, _len: int):
+    if _len == 0:
+        return None
+    if len(_str) >= _len:
+        _bytearray = _str[:_len].encode("utf-8")
+    else:
+        _bytearray = _str.encode("utf-8") + b'\x00' * (_len - len(_str))
+    return _bytearray
+
+
+# 获取Git提交版本号，输出为长度为8的字符串
+def get_git_commit_id():
+    try:
+        repo = git.Repo(search_parent_directories=True)
+        if repo.is_dirty(untracked_files=True) or repo.index.diff("HEAD"):
+            commit_sha = repo.head.commit.hexsha[:7] + '*'
+        else:
+            commit_sha = repo.head.commit.hexsha[:8]
+        return commit_sha
+    except git.InvalidGitRepositoryError:
+        return "Unknown*"
+
+
+# 主程序
 #  Start here
 parser = OptionParser()
 parser.add_option("-k", "--kernel-dir",
@@ -101,10 +153,6 @@ parser.add_option("-c", "--configure-file",
                   dest="configure_file", default='boot_config.h',
                   action="store", type="string",
                   help="Configure file name (default=\'boot_config.h\')")
-parser.add_option("-r", "--revision-file",
-                  dest="revision_file", default='revision.h',
-                  action="store", type="string",
-                  help="Revision file name (default=\'revision.h\')")
 parser.add_option("-o", "--output",
                   dest="output", default='Output',
                   action="store", type="string",
@@ -133,19 +181,7 @@ if start_address != (flash_base + kernel_offset):
     print('[ERROR] 内核启动地址错误!请检查工程设置!')
     sys.exit(2)
 
-# 解析 revision.h 文件
-revision_path = os.path.join(kernel_path, options.revision_file)
-if not os.path.exists(kernel_path + '/' + options.revision_file):
-    print('Revision 文件' + revision_path + '不存在')
-   git_revision = "Unknown"
-
-git_revision = parse_revision_file(revision_path)
-if git_revision is None:
-    print('Revision 文件' + revision_path + '解析失败')
-    git_revision = "Unknown"
-
-
-#获取内核和Bootloader的二进制文件路径
+# 获取内核和Bootloader的二进制文件路径
 kernel_bin_path = kernel_path + '/Output/kernel.bin'
 boot_bin_path = boot_path + '/Output/boot.bin'
 output_dir = options.output.rstrip('\\').rstrip('/')
@@ -158,7 +194,7 @@ print("BASE =       " + hex(flash_base))
 print("START_ADDR = " + hex(start_address))
 print("OFFSET =     " + hex(kernel_offset))
 
-#检查文件存在性
+# 检查文件存在性
 if not os.path.exists(kernel_bin_path):
     print('[ERROR] 内核Bin文件不存在!')
     sys.exit(3)
@@ -182,36 +218,24 @@ kernel_md5 = hashlib.md5(kernel).hexdigest()
 
 # 输出FW文件
 fw_file_path = output_dir + '\\' + 'sec_ota_' + \
-    config[0] + '_' + config[1] + '.fw'
+               config[0] + '_' + config[1] + '.fw'
 fw_file = open(fw_file_path, 'w+b')
-fw_file.write(bytes('SFP', encoding='utf-8'))
-fw_file.write(bytes(1))
-fw_file.write(bytes(6))
-if len(config[0]) > 32:
-    fw_file.write(bytes(config[0][0:32], encoding='utf-8'))
-else:
-    fw_file.write(bytes(config[0], encoding='utf-8'))
-    fw_file.write(bytes(32 - len(config[0])))
-
-if len(config[1]) > 8:
-    fw_file.write(bytes(config[0][0:8], encoding='utf-8'))
-else:
-    fw_file.write(bytes(config[1], encoding='utf-8'))
-    fw_file.write(bytes(8 - len(config[1])))
-
-fw_file.write(bytes(time.strftime("%Y-%m-%d %H:%M:%S",
-              time.localtime(kernel_mtime)), encoding='utf-8'))
-fw_file.write(bytes(5))
-fw_file.write(int(kernel_size).to_bytes(4, 'little'))
-fw_file.write(int(kernel_md5[0:16], 16).to_bytes(8, 'big'))
-fw_file.write(git_revision[:8].encode('utf-8'))  # 写入8个字节的 GIT_REVISION
-fw_file.write(bytes(2))
+firmware_header = FirmwareHeader()
+firmware_header.pack_tool = string_to_bytearray('SFP', 4)
+firmware_header.proj_tag = string_to_bytearray(config[0], 32)
+firmware_header.version = bytes(config[1], encoding="utf-8")
+firmware_header.create_time = bytes(time.strftime("%Y-%m-%d %H:%M:%S",
+                                                  time.localtime(kernel_mtime)), encoding='utf-8')
+firmware_header.size = kernel_size
+firmware_header.md5 = int(kernel_md5[0:16], 16).to_bytes(8, 'big')
+firmware_header.git_revision = get_git_commit_id().encode("utf-8")
+fw_file.write(firmware_header)
 fw_file.write(kernel)
 fw_file.close()
 
 # 输出HEX文件
 hex_file_path = output_dir + '\\' + 'sec_fct_' + \
-    config[0] + '_' + config[1] + '.hex'
+                config[0] + '_' + config[1] + '.hex'
 hex_data = intelhex.IntelHex()
 hex_data.loadbin(fw_file_path, flash_base + kernel_offset - 96)
 boot_hex_data = intelhex.IntelHex()
@@ -220,13 +244,13 @@ hex_data.merge(boot_hex_data)
 hex_data.tofile(hex_file_path, 'hex')
 
 print("\n\nFirmware info ------------------------------")
-print("packer:  PySFP")
-print("proj:    " + config[0])
-print("ver:     " + config[1])
-print("time:    " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(kernel_mtime)))
-print("size:    " + str(kernel_size) + 'bytes')
-print("MD5:     <" + kernel_md5[0:32] + '>')
-print("revision_path: " + git_revision[:8])
+print("packer:      PySFP")
+print("proj:        " + config[0])
+print("ver:         " + config[1])
+print("time:        " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(kernel_mtime)))
+print("size:        " + str(kernel_size) + 'bytes')
+print("MD5:         <" + kernel_md5[0:32] + '>')
+print("Commit SHA:  " + get_git_commit_id())
 print("--------------------------------------------")
 print("Firmware Pack Complete!")
 sys.exit(0)
