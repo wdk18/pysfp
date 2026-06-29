@@ -234,6 +234,15 @@ def get_git_commit_id() -> str:
         return "Unknown*"
 
 
+def is_file_a_newer(file_a_path, file_b_path):
+    # 获取文件 A 的最后修改时间
+    time_a = os.path.getmtime(file_a_path)
+    # 获取文件 B 的最后修改时间
+    time_b = os.path.getmtime(file_b_path)
+
+    # 比较时间，返回结果
+    return time_a > time_b
+
 def main() -> None:
     """主程序入口函数。
 
@@ -424,6 +433,10 @@ def main() -> None:
         )
     else:
         print("工程未启用固件保护")
+    if is_file_a_newer(config_file_path, boot_bin_path):
+        print("[WARNING] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+        print(f"[WARNING] @ 修改 'boot_config.h' 后还没有重新编译Boot @")
+        print("[WARNING] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
     sys.exit(0)
 
 
