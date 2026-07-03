@@ -243,6 +243,7 @@ def is_file_a_newer(file_a_path, file_b_path):
     # 比较时间，返回结果
     return time_a > time_b
 
+
 def main() -> None:
     """主程序入口函数。
 
@@ -378,7 +379,7 @@ def main() -> None:
         + config[0]
         + "_"
         + config[1]
-        + ("_secured" if config[3] else "")
+        + ("_secured" if config[4] else "")
         + ".fw"
     )
     with open(fw_file_path, "w+b") as fw_file:
@@ -404,7 +405,7 @@ def main() -> None:
         + config[0]
         + "_"
         + config[1]
-        + ("_secured" if config[3] else "")
+        + ("_secured" if config[4] else "")
         + ".hex"
     )
     hex_data = intelhex.IntelHex()
